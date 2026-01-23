@@ -53,6 +53,21 @@ enum class GimbalMode
   BIG_BUFF     // 大符
 };
 
+struct __attribute__((packed)) RxPacket {
+    uint8_t head[2];        // 'S', 'P'
+    uint8_t mode;
+    float q[4];
+    float yaw;
+    float yaw_vel;
+    float pitch;
+    float pitch_vel;
+    float bullet_speed;
+    uint16_t bullet_count;
+    uint16_t crc16;
+};
+
+static_assert(sizeof(RxPacket) == 43, "RxPacket must be exactly 43 bytes");
+
 struct GimbalState
 {
   float yaw;
@@ -99,6 +114,8 @@ private:
   bool read(uint8_t * buffer, size_t size);
   void read_thread();
   void reconnect();
+  std::vector<uint8_t> recv_buffer_;  // 新增：接收缓冲区
+  size_t recv_pos_ = 0;               // 新增：缓冲区写入位置
 };
 
 }  // namespace io

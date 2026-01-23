@@ -55,8 +55,8 @@ private:
   tools::ExtendedKalmanFilter ekf_;
   std::chrono::steady_clock::time_point t_;
 
+  double getoutpost_armor_z(const Eigen::VectorXd & x, int id) const;
   void update_ypda(const Armor & armor, int id);  // yaw pitch distance angle
-
   Eigen::Vector3d h_armor_xyz(const Eigen::VectorXd & x, int id) const;
   Eigen::MatrixXd h_jacobian(const Eigen::VectorXd & x, int id) const;
 };

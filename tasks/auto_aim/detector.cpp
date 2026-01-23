@@ -376,8 +376,8 @@ void Detector::show_result(
   }
 
   cv::Mat binary_img2;
-  cv::resize(binary_img, binary_img2, {}, 0.5, 0.5);  // 显示时缩小图片尺寸
-  cv::resize(detection, detection, {}, 0.5, 0.5);     // 显示时缩小图片尺寸
+  cv::resize(binary_img, binary_img2, {}, 0.3, 0.3);  // 显示时缩小图片尺寸
+  cv::resize(detection, detection, {}, 0.3, 0.3);     // 显示时缩小图片尺寸
 
   // cv::imshow("threshold", binary_img2);
   cv::imshow("detection", detection);

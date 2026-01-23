@@ -50,6 +50,14 @@ private:
   int nees_count_ = 0;
   int nis_count_ = 0;
   int total_count_ = 0;
+    // 用于减少晃动的参数
+    double prediction_damping_factor;     // 预测阻尼系数
+    double velocity_smoothing_factor;     // 速度平滑系数
+    double max_velocity_threshold;        // 最大允许速度阈值
+    double adaptive_noise_factor;         // 自适应噪声因子
+    
+    // 用于跟踪更新幅度
+    static constexpr double max_update_magnitude = 2.0; // 最大更新幅度
 };
 
 }  // namespace tools

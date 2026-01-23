@@ -240,23 +240,23 @@ bool Tracker::set_target(std::list<Armor> & armors, std::chrono::steady_clock::t
                     (armor.name == ArmorName::three || armor.name == ArmorName::four ||
                      armor.name == ArmorName::five);
 
-  if (is_balance) {
-    Eigen::VectorXd P0_dig{{1, 64, 1, 64, 1, 64, 0.4, 100, 1, 1, 1}};
+  if (is_balance) {//原一百改六十
+    Eigen::VectorXd P0_dig{{1, 64, 1, 64, 1, 64, 0.4, 60, 1, 1, 1}};
     target_ = Target(armor, t, 0.2, 2, P0_dig);
   }
 
   else if (armor.name == ArmorName::outpost) {
-    Eigen::VectorXd P0_dig{{1, 64, 1, 64, 1, 81, 0.4, 100, 1e-4, 0, 0}};
+    Eigen::VectorXd P0_dig{{1, 64, 1, 64, 1, 81, 0.4, 60, 1e-4, 0, 0}};
     target_ = Target(armor, t, 0.2765, 3, P0_dig);
   }
 
   else if (armor.name == ArmorName::base) {
-    Eigen::VectorXd P0_dig{{1, 64, 1, 64, 1, 64, 0.4, 100, 1e-4, 0, 0}};
+    Eigen::VectorXd P0_dig{{1, 64, 1, 64, 1, 64, 0.4, 60, 1e-4, 0, 0}};
     target_ = Target(armor, t, 0.3205, 3, P0_dig);
   }
 
   else {
-    Eigen::VectorXd P0_dig{{1, 64, 1, 64, 1, 64, 0.4, 100, 1, 1, 1}};
+    Eigen::VectorXd P0_dig{{1, 64, 1, 64, 1, 64, 0.4, 60, 1, 1, 1}};
     target_ = Target(armor, t, 0.2, 4, P0_dig);
   }
 
