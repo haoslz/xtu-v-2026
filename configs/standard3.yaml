@@ -1,4 +1,4 @@
-#enemy_color: "red"
+# enemy_color: "red"
 enemy_color: "blue"
 
 #####-----神经网络参数-----#####
@@ -7,7 +7,7 @@ classify_model: assets/tiny_resnet.onnx
 yolo11_model_path: assets/yolo11.xml
 yolov8_model_path: assets/yolov8.xml
 yolov5_model_path: assets/yolov5.xml
-device: CPU
+device: GPU
 min_confidence: 0.8
 use_traditional: true
 
@@ -20,7 +20,7 @@ roi:
 
 use_roi: false
 
-#####-----传统方法参数-----#####S
+#####-----传统方法参数-----#####
 threshold: 150
 max_angle_error: 45 # degree
 min_lightbar_ratio: 1.5
@@ -37,9 +37,9 @@ max_temp_lost_count: 15
 outpost_max_temp_lost_count: 75
 
 #####-----aimer参数-----#####
-yaw_offset: 2 # degree -2.5
-pitch_offset: 6.5 # degree 2
-comming_angle: 55 # degree
+yaw_offset: -8.5 # degree -2.5 向左为正
+pitch_offset: -1 # degree 2 向上为正
+comming_angle: 20 # degree
 leaving_angle: 20 # degree
 decision_speed: 7 # rad/s
 high_speed_delay_time: 0.0 # s
@@ -61,25 +61,22 @@ vid_pid: "2bdf:0001"
 #  0  0  1
 R_gimbal2imubody: [1, 0, 0, 0, 1, 0, 0, 0, 1]
 
-# 重投影误差: 0.0771px
-camera_matrix: [3769.4790943911462, 0, 808.60045149524751, 0, 3772.3150009087076, 573.89490974770069, 0, 0, 1]
-distort_coeffs: [-0.012264474128282118, 0.15364646922378458, 0.0023309588329834285, -0.0026824789944141143, 0]
 
-# 相机同理想情况的偏角: yaw1.44 pitch-7.28 roll0.96 degree
-# 标定板到世界坐标系原点的水平距离: 1.13 m
-# 相机同理想情况的偏角: yaw-1.22 pitch-1.41 roll2.68 degree
-R_camera2gimbal: [0.020070973457829933, -0.025520261687840801, 0.9994727971625037, -0.99870269105742271, 0.046280826722064461, 0.021237230341650159, -0.046798407014738662, -0.99860242405138711, -0.024558252779391276]
-t_camera2gimbal: [-0.60901342903212285, 0.17992195393974511, 0.363992671333289]
+# 重投影误差: 0.0605px
+camera_matrix: [1730.7107341973649, 0, 728.97473270583646, 0, 1735.1131442449105, 455.94964292375778, 0, 0, 1]
+distort_coeffs: [-0.097028190516311175, 0.18753197920473369, -0.003793088668409072, 0.0023961173264070708, 0]
+
+R_camera2gimbal: [0.14379551622327891, 0.055538111495032398, 0.98804775577177761, -0.9887853847624497, -0.032623550862022288, 0.14573663509676457, 0.040327563703442496, -0.99792345503085489, 0.050224152606354489]
+t_camera2gimbal: [0.35493589472837417, 0.086955399320298957, -0.074525955300389607]
 
 #####-----cboard参数-----#####
-cboard:
-  interface: serial      # 明确指定为串口
-  can:
-    enable: false
-  serial:
-    enable: true
-    port: /dev/ttyUSB0   # 根据实际串口设备修改
-    baudrate: 115200
+cboard_com_port: "/dev/gimbal"
+cboard_baudrate: 115200
+skip_cboard_crc: true
+# quaternion_canid: 0x100
+# bullet_speed_canid: 0x101
+# send_canid: 0xff
+# can_interface: "can0"
 
 #####-----gimbal参数-----#####
 com_port: "/dev/gimbal"
@@ -89,15 +86,15 @@ pitch_kp: 0
 pitch_kd: 0
 
 #####-----planner-----#####
-fire_thresh: 0.0035
+fire_thresh: 0.003
 
 max_yaw_acc: 50
-Q_yaw: [9e6, 0]
-R_yaw: [1]
+Q_yaw: [1e2, 0]
+R_yaw: [9e9]
 
 max_pitch_acc: 100
 Q_pitch: [9e6, 0]
-R_pitch: [1]
+R_pitch: [100]
 
 #####-----buff_detector参数-----#####
 model: "assets/yolo11_buff_int8.xml"

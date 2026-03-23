@@ -29,7 +29,7 @@ Eigen::VectorXd ExtendedKalmanFilter::predict(
   const Eigen::MatrixXd & F, const Eigen::MatrixXd & Q,
   std::function<Eigen::VectorXd(const Eigen::VectorXd &)> f)
 {
-  P = F * P * F.transpose() + 0.1*Q;
+  P = F * P * F.transpose() + Q;
   x = f(x);
   return x;
 }
@@ -63,8 +63,8 @@ Eigen::VectorXd ExtendedKalmanFilter::update(
   double nees = (x - x_prior).transpose() * P.inverse() * (x - x_prior);
 
   // 卡方检验阈值（自由度=4，取置信水平95%）
-  constexpr double nis_threshold = 0.711;
-  constexpr double nees_threshold = 0.711;//9.488;
+  constexpr double nis_threshold = 5;
+  constexpr double nees_threshold = 5;
 
   if (nis > nis_threshold) nis_count_++, data["nis_fail"] = 1;
   if (nees > nees_threshold) nees_count_++, data["nees_fail"] = 1;

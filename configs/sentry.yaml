@@ -35,11 +35,12 @@ usb_gain: 10 #0-96
 
 #####-----工业相机参数-----#####
 camera_name: "hikrobot"
-exposure_ms: 10
+exposure_ms: 0.8
 gain: 16.9
 vid_pid: "2bdf:0001"
 
 #####-----传统方法参数-----#####
+fire_thresh : 0.5
 threshold: 150
 max_angle_error: 45 # degree
 min_lightbar_ratio: 1.5
@@ -50,38 +51,24 @@ max_armor_ratio: 5
 max_side_ratio: 1.5
 max_rectangular_error: 25 # degree
 min_confidence: 0.8
-
-#####-----cboard参数-----#####
 com_port: "/dev/gimbal"
-baudrate: 115200          # 必须与下位机一致！
-data_bits: 8
-stop_bits: 1
-parity: "none"
-flow_control: "none"
-timeout_ms: 20             # 读串口最多等20ms
-
-yaw_kp: 0.5
-yaw_kd: 0.1
-pitch_kp: 0.5
-pitch_kd: 0.1
+#####-----cboard参数-----#####
+cboard_com_port: "/dev/gimbal"
+cboard_baudrate: 115200
+skip_cboard_crc: true
+# quaternion_canid: 0x100
+# bullet_speed_canid: 0x101
+# send_canid: 0xff
+# can_interface: "can0"
 
 #####-----tracker参数-----#####
-fire_thresh: 0.0035
-max_yaw_acc: 50
-Q_yaw: [9e6, 0]
-R_yaw: [1]
-
-max_pitch_acc: 100
-Q_pitch: [9e6, 0]
-R_pitch: [1]
-
 min_detect_count: 5
 max_temp_lost_count: 25
 outpost_max_temp_lost_count: 75
 
 #####-----aimer参数-----#####
-yaw_offset: -0.8 # degree -2.5
-pitch_offset: -1  # degree 2
+yaw_offset: 0.0 # 云台yaw原点偏移，单位：弧度
+pitch_offset: 0.0 # 云台pitch原点偏移，单位：弧度
 comming_angle: 60 # degree
 leaving_angle: 20 # degree
 left_yaw_offset: -1
@@ -98,17 +85,18 @@ auto_fire: true # 是否由自瞄控制射击
 
 #####-----decider参数-----#####
 mode: 1
-
+max_yaw_acc: 20 # degree/s^2
+max_pitch_acc: 20 # degree/s^2
+Q_yaw: [9e6, 0] # yaw过程噪声
+Q_pitch: [9e6, 0] # pitch过程噪声
+R_yaw: [1e6] # yaw测量噪声
+R_pitch: [1e6] # pitch测量噪声
 #####-----工业相机标定参数-----#####
 R_gimbal2imubody: [1, 0, 0, 0, 1, 0, 0, 0, 1]
 
-
-# 重投影误差: 0.0771px
-camera_matrix: [3769.4790943911462, 0, 808.60045149524751, 0, 3772.3150009087076, 573.89490974770069, 0, 0, 1]
-distort_coeffs: [-0.012264474128282118, 0.15364646922378458, 0.0023309588329834285, -0.0026824789944141143, 0]
-
-# 相机同理想情况的偏角: yaw-1.22 pitch-1.41 roll2.68 degree
-R_camera2gimbal: [0.020070973457829933, -0.025520261687840801, 0.9994727971625037, -0.99870269105742271, 0.046280826722064461, 0.021237230341650159, -0.046798407014738662, -0.99860242405138711, -0.024558252779391276]
-t_camera2gimbal: [-0.60901342903212285, 0.17992195393974511, 0.363992671333289]
-
-
+# 重投影误差: 0.0453px
+camera_matrix: [2489.7383897512514, 0, 667.6753988666527, 0, 2490.6960808066838, 571.05053143291263, 0, 0, 1]
+distort_coeffs: [-0.016304932582724346, 0.23092436762963142, 0.0011128599038257459, -0.0048370268354093211, 0]
+# 相机同理想情况的偏角: yaw2.35 pitch1.66 roll-5.91 degree
+R_camera2gimbal: [-0.12034, 0.02851, 0.99233, -0.99273, -0.00982, -0.12012, 0.00632, -0.99957, 0.02948]
+t_camera2gimbal: [0.02754, 0.00291, -0.00688]

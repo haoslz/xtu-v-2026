@@ -1,4 +1,5 @@
 #include <chrono>
+#include <nlohmann/json.hpp>
 #include <opencv2/opencv.hpp>
 #include <thread>
 
@@ -75,7 +76,7 @@ int main(int argc, char * argv[])
       if (!target_queue.empty() && mode == io::GimbalMode::AUTO_AIM) {
         auto target = target_queue.front();
         auto gs = gimbal.state();
-        auto plan = planner.plan(target, gs.bullet_speed);
+  auto plan = planner.plan(target, gs.bullet_speed, solver.R_gimbal2world());
 
         gimbal.send(
           plan.control, plan.fire, plan.yaw, plan.yaw_vel, plan.yaw_acc, plan.pitch, plan.pitch_vel,
@@ -86,6 +87,8 @@ int main(int argc, char * argv[])
         std::this_thread::sleep_for(200ms);
     }
   });
+
+  auto t0 = std::chrono::steady_clock::now();
 
   while (!exiter.exit()) {
     mode = gimbal.mode();
@@ -135,6 +138,19 @@ int main(int argc, char * argv[])
 
     } else
       gimbal.send(false, false, 0, 0, 0, 0, 0, 0);
+
+    // // 发送调试数据
+    // nlohmann::json data;
+    // data["t"] = tools::delta_time(std::chrono::steady_clock::now(), t0);
+    // data["mode"] = static_cast<int>(mode.load());
+    // data["gimbal_yaw"] = gs.yaw;
+    // data["gimbal_yaw_vel"] = gs.yaw_vel;
+    // data["gimbal_pitch"] = gs.pitch;
+    // data["gimbal_pitch_vel"] = gs.pitch_vel;
+    // data["bullet_speed"] = gs.bullet_speed;
+    // data["bullet_count"] = gs.bullet_count;
+
+    // plotter.plot(data);
   }
 
   quit = true;

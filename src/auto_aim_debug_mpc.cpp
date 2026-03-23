@@ -29,6 +29,14 @@ int main(int argc, char * argv[])
 {
   tools::Exiter exiter;
   tools::Plotter plotter;
+  // 读取yaw/pitch偏移（以世界坐标系为原点）
+  cv::FileStorage fs(config_path, cv::FileStorage::READ);
+  double yaw_offset = 0.0, pitch_offset = 0.0;
+  if (fs.isOpened()) {
+    if (fs["yaw_offset"].isReal()) yaw_offset = static_cast<double>(fs["yaw_offset"]);
+    if (fs["pitch_offset"].isReal()) pitch_offset = static_cast<double>(fs["pitch_offset"]);
+    fs.release();
+  }
 
   cv::CommandLineParser cli(argc, argv, keys);
   auto config_path = cli.get<std::string>(0);
@@ -48,73 +56,46 @@ int main(int argc, char * argv[])
   tools::ThreadSafeQueue<std::optional<auto_aim::Target>, true> target_queue(1);
   target_queue.push(std::nullopt);
 
+  // 用于线程间共享 Tracker 状态
+  std::atomic<int> tracker_state_code{0};  // 0=lost, 1=detecting, 2=tracking, 3=temp_lost, 4=switching
+
   std::atomic<bool> quit = false;
   auto plan_thread = std::thread([&]() {
     auto t0 = std::chrono::steady_clock::now();
     uint16_t last_bullet_count = 0;
 
-    // 保持上一次pitch相关值
-    double last_pitch = 0.0, last_pitch_vel = 0.0, last_pitch_acc = 0.0;
     while (!quit) {
       auto target = target_queue.front();
-      // // 检查 target 是否有值并打印
-      // if (target.has_value()) {
-      //   fmt::print("[TARGET] has_value: true\n");
-      //   // 打印 armor_xyza_list pitch 相关信息
-      //   const auto& armor_list = target->armor_xyza_list();
-      //   for (size_t i = 0; i < armor_list.size(); ++i) {
-      //     fmt::print("[TARGET] armor[{}] xyz: ({:.3f}, {:.3f}, {:.3f}), yaw: {:.3f}\n", i, armor_list[i][0], armor_list[i][1], armor_list[i][2], armor_list[i][3]);
-      //   }
-      //   // 打印 ekf_x pitch 相关信息（如有）
-      //   const auto& ekf_x = target->ekf_x();
-      //   if (ekf_x.size() > 5) {
-      //     fmt::print("[TARGET] ekf_x[2](vx): {:.3f}, ekf_x[3](vy): {:.3f}, ekf_x[4](z): {:.3f}, ekf_x[5](vz): {:.3f}\n", ekf_x[2], ekf_x[3], ekf_x[4], ekf_x[5]);
-      //   }
-      // } else {
-      //   fmt::print("[TARGET] has_value: false\n");
-      // }
-
       auto gs = gimbal.state();
-      auto plan = planner.plan(target, gs.bullet_speed);
-
-      // 目标丢失时保持上一次pitch相关值
-      if (!target.has_value()) {
-        plan.pitch = last_pitch;
-        plan.pitch_vel = last_pitch_vel;
-        plan.pitch_acc = last_pitch_acc;
-      } else {
-        last_pitch = plan.pitch;
-        last_pitch_vel = plan.pitch_vel;
-        last_pitch_acc = plan.pitch_acc;
-      }
-
-      // 打印即将发送的 pitch、pitch_vel、pitch_acc
-      //fmt::print("[SEND] pitch: {:.3f}, pitch_vel: {:.3f}, pitch_acc: {:.3f}\n", plan.pitch, plan.pitch_vel, plan.pitch_acc);
+  auto plan = planner.plan(target, gs.bullet_speed, solver.R_gimbal2world());
 
       gimbal.send(
         plan.control, plan.fire, plan.yaw, plan.yaw_vel, plan.yaw_acc, plan.pitch, plan.pitch_vel,
         plan.pitch_acc);
-
-      auto fired = gs.bullet_count > last_bullet_count;
+      data["gimbal_yaw"] = yaw_world;  // 世界坐标系yaw
       last_bullet_count = gs.bullet_count;
-
+      data["gimbal_pitch"] = pitch_world;  // 世界坐标系pitch
       nlohmann::json data;
       data["t"] = tools::delta_time(std::chrono::steady_clock::now(), t0);
+      
+      // Tracker 状态
+      data["tracker_state"] = tracker_state_code.load();
+      data["has_target"] = target.has_value() ? 1 : 0;
 
-      data["gimbal_yaw"] = gs.yaw;
-      data["gimbal_yaw_vel"] = gs.yaw_vel;
-      data["gimbal_pitch"] = gs.pitch;
-      data["gimbal_pitch_vel"] = gs.pitch_vel;
+  data["gimbal_yaw"] = gs.yaw;  // radians
+  data["gimbal_yaw_vel"] = 0;
+  data["gimbal_pitch"] = gs.pitch;      // 向上为负 (radians)
+  data["gimbal_pitch_vel"] = 0;
 
       data["target_yaw"] = plan.target_yaw;
       data["target_pitch"] = plan.target_pitch;
 
       data["plan_yaw"] = plan.yaw;
-      data["plan_yaw_vel"] = plan.yaw_vel;
+      data["plan_yaw_vel"] = 0;
       data["plan_yaw_acc"] = plan.yaw_acc;
 
       data["plan_pitch"] = plan.pitch;
-      data["plan_pitch_vel"] = plan.pitch_vel;
+      data["plan_pitch_vel"] = 0;
       data["plan_pitch_acc"] = plan.pitch_acc;
 
       data["fire"] = plan.fire ? 1 : 0;
@@ -127,6 +108,7 @@ int main(int argc, char * argv[])
 
       if (target.has_value()) {
         data["w"] = target->ekf_x()[7];
+        data["angle"] = target->ekf_x()[6];  // EKF 角度 a
       } else {
         data["w"] = 0.0;
       }
@@ -139,14 +121,33 @@ int main(int argc, char * argv[])
 
   cv::Mat img;
   std::chrono::steady_clock::time_point t;
+  auto t0 = std::chrono::steady_clock::now();
+  std::string last_state = "lost";
 
   while (!exiter.exit()) {
     camera.read(img, t);
+    //cv::flip(img,img,-1);
     auto q = gimbal.q(t);
+    tools::logger()->info("[Auto] gimbal.q(t): [{:.6f}, {:.6f}, {:.6f}, {:.6f}]", q.w(), q.x(), q.y(), q.z());
 
     solver.set_R_gimbal2world(q);
     auto armors = yolo.detect(img);
     auto targets = tracker.track(armors, t);
+    
+    // 调试信息：Tracker 状态变化
+     auto current_state = tracker.state();
+    // if (current_state != last_state) {
+    //   tools::logger()->info("[Tracker] State: {} -> {}", last_state, current_state);
+    //   last_state = current_state;
+    // }
+    
+    // 更新状态码供 plotter 使用
+    if (current_state == "lost") tracker_state_code = 0;
+    else if (current_state == "detecting") tracker_state_code = 1;
+    else if (current_state == "tracking") tracker_state_code = 2;
+    else if (current_state == "temp_lost") tracker_state_code = 3;
+    else if (current_state == "switching") tracker_state_code = 4;
+    
     if (!targets.empty())
       target_queue.push(targets.front());
     else
@@ -167,7 +168,22 @@ int main(int argc, char * argv[])
       auto image_points =
         solver.reproject_armor(aim_xyza.head(3), aim_xyza[3], target.armor_type, target.name);
       tools::draw_points(img, image_points, {0, 0, 255});
+      
+      // // 在终端上显示 EKF 状态信息
+      // auto ekf_x = target.ekf_x();
+      // tools::logger()->info(
+      //   "[EKF] x={:.4f} vx={:.4f} y={:.4f} vy={:.4f} z={:.4f} vz={:.4f} a={:.4f} w={:.4f} r={:.4f} l={:.4f} h={:.4f}",
+      //   ekf_x[0], ekf_x[1], ekf_x[2], ekf_x[3], ekf_x[4], ekf_x[5], 
+      //   ekf_x[6], ekf_x[7], ekf_x[8], ekf_x[9], ekf_x[10]);
     }
+    
+    // 在图像上显示 Tracker 状态
+    cv::Scalar state_color = (current_state == "tracking") ? cv::Scalar(0, 255, 0) : 
+                             (current_state == "detecting") ? cv::Scalar(0, 255, 255) :
+                             (current_state == "temp_lost") ? cv::Scalar(0, 165, 255) :
+                             cv::Scalar(0, 0, 255);  // lost = red
+    cv::putText(img, fmt::format("State: {}", current_state), 
+                {10, 30}, cv::FONT_HERSHEY_SIMPLEX, 0.8, state_color, 2);
 
     cv::resize(img, img, {}, 0.5, 0.5);  // 显示时缩小图片尺寸
     cv::imshow("reprojection", img);

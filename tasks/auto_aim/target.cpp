@@ -37,7 +37,7 @@ Target::Target(
   // l: r2 - r1
   // h: z2 - z1
   Eigen::VectorXd x0{{center_x, 0, center_y, 0, center_z, 0, ypr[0], 0, r, 0, 0}};  //初始化预测量
-  Eigen::MatrixXd P0 = P0_dig.asDiagonal(); 
+  Eigen::MatrixXd P0 = P0_dig.asDiagonal();
 
   // 防止夹角求和出现异常值
   auto x_add = [](const Eigen::VectorXd & a, const Eigen::VectorXd & b) -> Eigen::VectorXd {
@@ -98,8 +98,8 @@ void Target::predict(double dt)
     v1 = 10;   // 前哨站加速度方差
     v2 = 0.1;  // 前哨站角加速度方差
   } else {
-    v1 = 100;  // 加速度方差
-    v2 = 400;  // 角加速度方差
+    v1 = 20;   // 加速度方差
+    v2 = 100;  // 角加速度方差
   }
   auto a = dt * dt * dt * dt / 4;
   auto b = dt * dt * dt / 2;
@@ -125,6 +125,22 @@ void Target::predict(double dt)
   auto f = [&](const Eigen::VectorXd & x) -> Eigen::VectorXd {
     Eigen::VectorXd x_prior = F * x;
     x_prior[6] = tools::limit_rad(x_prior[6]);
+    
+    // 速度衰减：帮助快速响应急停（更激进的衰减以减少过冲）
+    x_prior[1] *= 0.90;  // vx 衰减（原0.95）
+    x_prior[3] *= 0.90;  // vy 衰减（原0.95）
+    x_prior[5] *= 0.90;  // vz 衰减（原0.95）
+    x_prior[7] *= 0.85;  // 角速度 w 衰减更激进（原0.90）
+    
+    // 限制角速度最大值，防止预测过冲
+    const double max_omega = 5.0;  // rad/s（原6.0，减小限制）
+    if (x_prior[7] > max_omega) x_prior[7] = max_omega;
+    if (x_prior[7] < -max_omega) x_prior[7] = -max_omega;
+    
+    // 将 r 和 l 设为定值，不参与预测变化
+    x_prior[8] = x[8];  // r 保持不变
+    x_prior[9] = x[9];  // l 保持不变
+
     return x_prior;
   };
 
@@ -180,19 +196,24 @@ void Target::update(const Armor & armor)
 
   last_id = id;
   update_count_++;
+
   update_ypda(armor, id);
 }
 
 void Target::update_ypda(const Armor & armor, int id)
 {
+  // 保存 r 和 l 的值（在 update 前保存，然后在 update 后恢复）
+  double r_before = ekf_.x[8];
+  double l_before = ekf_.x[9];
+  
   //观测jacobi
   Eigen::MatrixXd H = h_jacobian(ekf_.x, id);
-  // R整体调大（原基础上再乘2）
+  // Eigen::VectorXd R_dig{{4e-3, 4e-3, 1, 9e-2}};
   auto center_yaw = std::atan2(armor.xyz_in_world[1], armor.xyz_in_world[0]);
   auto delta_angle = tools::limit_rad(armor.ypr_in_world[0] - center_yaw);
   Eigen::VectorXd R_dig{
-    {16e-3, 16e-3, 4 * (log(std::abs(delta_angle) + 1) + 1),
-     4 * (log(std::abs(armor.ypd_in_world[2]) + 1) / 200 + 9e-2)}};
+    {5e-3, 5e-3, log(std::abs(delta_angle) + 1) + 1,
+     log(std::abs(armor.ypd_in_world[2]) + 1) / 200 + 9e-2}};
 
   //测量过程噪声偏差的方差
   Eigen::MatrixXd R = R_dig.asDiagonal();
@@ -219,6 +240,10 @@ void Target::update_ypda(const Armor & armor, int id)
   Eigen::VectorXd z{{ypd[0], ypd[1], ypd[2], ypr[0]}};  //获得观测量
 
   ekf_.update(z, H, R, h, z_subtract);
+
+  // update 之后，立即恢复 r 和 l 为原值（强制保持为常数）
+  ekf_.x[8] = r_before;
+  ekf_.x[9] = l_before;
 }
 
 Eigen::VectorXd Target::ekf_x() const { return ekf_.x; }
@@ -239,10 +264,18 @@ std::vector<Eigen::Vector4d> Target::armor_xyza_list() const
 
 bool Target::diverged() const
 {
-  auto r_ok = ekf_.x[8] > 0.05 && ekf_.x[8] < 0.5;
-  auto l_ok = ekf_.x[8] + ekf_.x[9] > 0.05 && ekf_.x[8] + ekf_.x[9] < 0.5;
+  // 只检测 r 是否超出合理范围（过大或为负太多）
+  // 静止目标的 r 可能接近 0，这是正常的
+  auto r = ekf_.x[8];
+  auto r_plus_l = ekf_.x[8] + ekf_.x[9];
+  
+  // 只有当 r 超出 [0.1,0,5] 范围时才认为发散
+  auto r_ok = r > 0.1 && r < 0.5;
+  auto l_ok = r_plus_l > 0.1 && r_plus_l < 0.5;
+
   if (r_ok && l_ok) return false;
 
+  tools::logger()->debug("[Target] Diverged! r={:.3f}, l={:.3f}", ekf_.x[8], ekf_.x[9]);
   return true;
 }
 
@@ -260,24 +293,16 @@ bool Target::convergened()
   return is_converged_;
 }
 
-double Target::getoutpost_armor_z(const Eigen::VectorXd & x, int id) const {
-  return(id == 0) ? x[4]
-        :(id == 1) ? x[4] + x[9]
-        :(id == 2) ? x[4] + x[10]
-                    :x[4] ;
-}
-
 // 计算出装甲板中心的坐标（考虑长短轴）
 Eigen::Vector3d Target::h_armor_xyz(const Eigen::VectorXd & x, int id) const
 {
   auto angle = tools::limit_rad(x[6] + id * 2 * CV_PI / armor_num_);
-  auto use_l_h = ((armor_num_ == 4) && (id == 1 || id == 3));
-  auto outpost = ((armor_num_ == 3) && name == ArmorName::outpost);
-  auto r = (use_l_h) ? x[8] + x[9] : x[8];
+  auto use_l_h = (armor_num_ == 4) && (id == 1 || id == 3);
 
+  auto r = (use_l_h) ? x[8] + x[9] : x[8];
   auto armor_x = x[0] - r * std::cos(angle);
   auto armor_y = x[2] - r * std::sin(angle);
-  auto armor_z = (outpost) ? getoutpost_armor_z(x, id) : (use_l_h) ? x[4] + x[10] : x[4];
+  auto armor_z = (use_l_h) ? x[4] + x[10] : x[4];
 
   return {armor_x, armor_y, armor_z};
 }
@@ -285,8 +310,8 @@ Eigen::Vector3d Target::h_armor_xyz(const Eigen::VectorXd & x, int id) const
 Eigen::MatrixXd Target::h_jacobian(const Eigen::VectorXd & x, int id) const
 {
   auto angle = tools::limit_rad(x[6] + id * 2 * CV_PI / armor_num_);
-  auto use_l_h = ((armor_num_ == 4) && (id == 1 || id == 3));
-  auto outpost = ((armor_num_ == 3) && name == ArmorName::outpost);
+  auto use_l_h = (armor_num_ == 4) && (id == 1 || id == 3);
+
   auto r = (use_l_h) ? x[8] + x[9] : x[8];
   auto dx_da = r * std::sin(angle);
   auto dy_da = -r * std::cos(angle);
@@ -296,19 +321,13 @@ Eigen::MatrixXd Target::h_jacobian(const Eigen::VectorXd & x, int id) const
   auto dx_dl = (use_l_h) ? -std::cos(angle) : 0.0;
   auto dy_dl = (use_l_h) ? -std::sin(angle) : 0.0;
 
-  auto dz_dl = 0.0;
   auto dz_dh = (use_l_h) ? 1.0 : 0.0;
-
-   if(outpost){
-   dz_dl = (id == 1) ? 1.0 : 0.0;
-   dz_dh = (id == 2) ? 1.0 : 0.0;
-  }
 
   // clang-format off
   Eigen::MatrixXd H_armor_xyza{
     {1, 0, 0, 0, 0, 0, dx_da, 0, dx_dr, dx_dl,     0},
     {0, 0, 1, 0, 0, 0, dy_da, 0, dy_dr, dy_dl,     0},
-    {0, 0, 0, 0, 1, 0,     0, 0,     0, dz_dl, dz_dh},
+    {0, 0, 0, 0, 1, 0,     0, 0,     0,     0, dz_dh},
     {0, 0, 0, 0, 0, 0,     1, 0,     0,     0,     0}
   };
   // clang-format on
