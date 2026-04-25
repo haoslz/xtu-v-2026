@@ -1,5 +1,6 @@
 #include "target.hpp"
 
+#include <algorithm>
 #include <numeric>
 
 #include "tools/logger.hpp"
@@ -19,7 +20,8 @@ Target::Target(
   t_(t),
   is_switch_(false),
   is_converged_(false),
-  switch_count_(0)
+  switch_count_(0),
+  fixed_r_(radius)
 {
   auto r = radius;
   priority = armor.priority;
@@ -30,7 +32,7 @@ Target::Target(
   auto center_x = xyz[0] + r * std::cos(ypr[0]);
   auto center_y = xyz[1] + r * std::sin(ypr[0]);
   auto center_z = xyz[2];
-
+  distance = std::sqrt(tools::square(xyz[0])+tools::square(xyz[1]));
   // x vx y vy z vz a w r l h
   // a: angle
   // w: angular velocity
@@ -49,7 +51,7 @@ Target::Target(
   ekf_ = tools::ExtendedKalmanFilter(x0, P0, x_add);  //初始化滤波器（预测量、预测量协方差）
 }
 
-Target::Target(double x, double vyaw, double radius, double h) : armor_num_(4)
+Target::Target(double x, double vyaw, double radius, double h) : armor_num_(4), fixed_r_(radius)
 {
   Eigen::VectorXd x0{{x, 0, 0, 0, 0, 0, 0, vyaw, radius, 0, h}};
   Eigen::VectorXd P0_dig{{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}};
@@ -98,7 +100,7 @@ void Target::predict(double dt)
     v1 = 10;   // 前哨站加速度方差
     v2 = 0.1;  // 前哨站角加速度方差
   } else {
-    v1 = 20;   // 加速度方差
+    v1 = 10;  // 加速度方差
     v2 = 100;  // 角加速度方差
   }
   auto a = dt * dt * dt * dt / 4;
@@ -121,26 +123,23 @@ void Target::predict(double dt)
   };
   // clang-format on
 
+  // 4装甲板目标：为 r, l, h 添加过程噪声，防止协方差崩塌
+  // 前哨站旋转半径固定，不添加过程噪声
+  if (armor_num_ == 4) {
+    double v3 = 0.1;
+    Q(8, 8) = v3 * c;
+    Q(9, 9) = v3 * c;
+    Q(10, 10) = v3 * c;
+  } else if (armor_num_ == 3 && this->name == ArmorName::outpost) {
+    // 前哨站：只给 h 添加过程噪声，r 固定
+    double v3 = 0.1;
+    Q(10, 10) = v3 * c;
+  }
+
   // 防止夹角求和出现异常值
   auto f = [&](const Eigen::VectorXd & x) -> Eigen::VectorXd {
     Eigen::VectorXd x_prior = F * x;
     x_prior[6] = tools::limit_rad(x_prior[6]);
-    
-    // 速度衰减：帮助快速响应急停（更激进的衰减以减少过冲）
-    x_prior[1] *= 0.90;  // vx 衰减（原0.95）
-    x_prior[3] *= 0.90;  // vy 衰减（原0.95）
-    x_prior[5] *= 0.90;  // vz 衰减（原0.95）
-    x_prior[7] *= 0.85;  // 角速度 w 衰减更激进（原0.90）
-    
-    // 限制角速度最大值，防止预测过冲
-    const double max_omega = 5.0;  // rad/s（原6.0，减小限制）
-    if (x_prior[7] > max_omega) x_prior[7] = max_omega;
-    if (x_prior[7] < -max_omega) x_prior[7] = -max_omega;
-    
-    // 将 r 和 l 设为定值，不参与预测变化
-    x_prior[8] = x[8];  // r 保持不变
-    x_prior[9] = x[9];  // l 保持不变
-
     return x_prior;
   };
 
@@ -202,17 +201,13 @@ void Target::update(const Armor & armor)
 
 void Target::update_ypda(const Armor & armor, int id)
 {
-  // 保存 r 和 l 的值（在 update 前保存，然后在 update 后恢复）
-  double r_before = ekf_.x[8];
-  double l_before = ekf_.x[9];
-  
   //观测jacobi
   Eigen::MatrixXd H = h_jacobian(ekf_.x, id);
   // Eigen::VectorXd R_dig{{4e-3, 4e-3, 1, 9e-2}};
   auto center_yaw = std::atan2(armor.xyz_in_world[1], armor.xyz_in_world[0]);
   auto delta_angle = tools::limit_rad(armor.ypr_in_world[0] - center_yaw);
   Eigen::VectorXd R_dig{
-    {5e-3, 5e-3, log(std::abs(delta_angle) + 1) + 1,
+    {4e-3, 4e-3, log(std::abs(delta_angle) + 1) + 1,
      log(std::abs(armor.ypd_in_world[2]) + 1) / 200 + 9e-2}};
 
   //测量过程噪声偏差的方差
@@ -241,9 +236,22 @@ void Target::update_ypda(const Armor & armor, int id)
 
   ekf_.update(z, H, R, h, z_subtract);
 
-  // update 之后，立即恢复 r 和 l 为原值（强制保持为常数）
-  ekf_.x[8] = r_before;
-  ekf_.x[9] = l_before;
+  distance = std::sqrt(tools::square(armor.xyz_in_world[0]) + tools::square(armor.xyz_in_world[1]));
+
+  // 仅4装甲板目标：将 r 和 r+l 约束在绝对物理范围内
+  if (armor_num_ == 4) {
+    constexpr double r_min = 0.05;  // 最小 5cm
+    constexpr double r_max = 0.50;  // 最大 50cm
+    ekf_.x[8] = std::clamp(ekf_.x[8], r_min, r_max);
+    // 确保 r+l（第二半径）也在合理范围内
+    double r2 = ekf_.x[8] + ekf_.x[9];
+    r2 = std::clamp(r2, r_min, r_max);
+    ekf_.x[9] = r2 - ekf_.x[8];
+  }
+
+  // tools::logger()->debug(
+  //   "[Target] r={:.4f}, l={:.4f}, P_r={:.6f}, fixed_r={:.3f}",
+  //   ekf_.x[8], ekf_.x[9], ekf_.P(8, 8), fixed_r_);
 }
 
 Eigen::VectorXd Target::ekf_x() const { return ekf_.x; }
@@ -262,20 +270,15 @@ std::vector<Eigen::Vector4d> Target::armor_xyza_list() const
   return _armor_xyza_list;
 }
 
-bool Target::diverged() const
+bool Target::diverged()
 {
-  // 只检测 r 是否超出合理范围（过大或为负太多）
-  // 静止目标的 r 可能接近 0，这是正常的
-  auto r = ekf_.x[8];
-  auto r_plus_l = ekf_.x[8] + ekf_.x[9];
-  
-  // 只有当 r 超出 [0.1,0,5] 范围时才认为发散
-  auto r_ok = r > 0.1 && r < 0.5;
-  auto l_ok = r_plus_l > 0.1 && r_plus_l < 0.5;
+  auto r_ok = ekf_.x[8] > 0 && ekf_.x[8] < 0.8;
+  auto l_ok = ekf_.x[8] + ekf_.x[9] > 0 && ekf_.x[8] + ekf_.x[9] < 0.8;
 
   if (r_ok && l_ok) return false;
 
-  tools::logger()->debug("[Target] Diverged! r={:.3f}, l={:.3f}", ekf_.x[8], ekf_.x[9]);
+  tools::logger()->debug("[Target] r={:.3f}, l={:.3f}", ekf_.x[8], ekf_.x[9]);
+  
   return true;
 }
 
@@ -302,7 +305,17 @@ Eigen::Vector3d Target::h_armor_xyz(const Eigen::VectorXd & x, int id) const
   auto r = (use_l_h) ? x[8] + x[9] : x[8];
   auto armor_x = x[0] - r * std::cos(angle);
   auto armor_y = x[2] - r * std::sin(angle);
-  auto armor_z = (use_l_h) ? x[4] + x[10] : x[4];
+
+  double armor_z;
+  if (armor_num_ == 3 && this->name == ArmorName::outpost) {
+    // 前哨站三装甲板：高度等差分布
+    // id=0: z-h, id=1: z, id=2: z+h
+    armor_z = x[4] + (id - 1) * x[10];
+  } else if (use_l_h) {
+    armor_z = x[4] + x[10];
+  } else {
+    armor_z = x[4];
+  }
 
   return {armor_x, armor_y, armor_z};
 }
@@ -321,7 +334,12 @@ Eigen::MatrixXd Target::h_jacobian(const Eigen::VectorXd & x, int id) const
   auto dx_dl = (use_l_h) ? -std::cos(angle) : 0.0;
   auto dy_dl = (use_l_h) ? -std::sin(angle) : 0.0;
 
-  auto dz_dh = (use_l_h) ? 1.0 : 0.0;
+  double dz_dh;
+  if (armor_num_ == 3 && this->name == ArmorName::outpost) {
+    dz_dh = id - 1;  // id=0: -1, id=1: 0, id=2: +1
+  } else {
+    dz_dh = (use_l_h) ? 1.0 : 0.0;
+  }
 
   // clang-format off
   Eigen::MatrixXd H_armor_xyza{

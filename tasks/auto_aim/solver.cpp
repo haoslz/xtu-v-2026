@@ -84,7 +84,7 @@ void Solver::solve(Armor & armor) const
                      armor.name == ArmorName::five);
   if (is_balance) return;
 
-  optimize_yaw(armor);
+  //optimize_yaw(armor);
 }
 
 std::vector<cv::Point2f> Solver::reproject_armor(

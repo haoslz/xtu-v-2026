@@ -1,10 +1,8 @@
 #include <fmt/core.h>
 
 #include <chrono>
-#include <exception>
 #include <nlohmann/json.hpp>
 #include <opencv2/opencv.hpp>
-#include <thread>
 
 #include "io/camera.hpp"
 #include "io/cboard.hpp"
@@ -34,7 +32,6 @@ int main(int argc, char * argv[])
   if (cli.has("help") || config_path.empty()) {
     cli.printMessage();
     return 0;
-    
   }
 
   tools::Exiter exiter;
@@ -57,18 +54,8 @@ int main(int argc, char * argv[])
   auto mode = io::Mode::idle;
   auto last_mode = io::Mode::idle;
 
-  auto t0 = std::chrono::steady_clock::now();
-
   while (!exiter.exit()) {
-    try {
-      camera.read(img, t);
-    } catch (const std::exception & e) {
-      // 相机读取失败时，创建空图像并继续
-      img = cv::Mat::zeros(480, 640, CV_8UC3);
-      t = std::chrono::steady_clock::now();
-      tools::logger()->debug("Camera read failed, using empty frame");
-    }
-    
+    camera.read(img, t);
     q = cboard.imu_at(t - 1ms);
     mode = cboard.mode;
 
@@ -87,31 +74,9 @@ int main(int argc, char * argv[])
 
     auto targets = tracker.track(armors, t);
 
-  auto command = aimer.aim(targets, t, cboard.bullet_speed, solver.R_gimbal2world());
+    auto command = aimer.aim(targets, t, cboard.bullet_speed);
 
     cboard.send(command);
-
-    // 发送调试数据
-    nlohmann::json data;
-    data["t"] = tools::delta_time(std::chrono::steady_clock::now(), t0);
-    data["mode"] = static_cast<int>(mode);
-  data["gimbal_yaw"] = ypr[0];
-  data["gimbal_pitch"] = -ypr[1];  // 向上为负
-    data["gimbal_roll"] = ypr[2];
-    data["bullet_speed"] = cboard.bullet_speed;
-    data["armors_detected"] = armors.size();
-    data["targets_tracked"] = targets.size();
-
-    // if (!targets.empty()) {
-    //   data["target_distance"] = targets.front().distance;
-    //   data["target_yaw"] = targets.front().yaw;
-    //   data["target_pitch"] = targets.front().pitch;
-    // }
-    data["command_yaw"] = command.yaw;
-    data["command_pitch"] = command.pitch;
-    data["command_shoot"] = command.shoot;
-
-    plotter.plot(data);
   }
 
   return 0;

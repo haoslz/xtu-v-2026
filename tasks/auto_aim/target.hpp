@@ -22,7 +22,7 @@ public:
   ArmorPriority priority;
   bool jumped;
   int last_id;  // debug only
-
+  float distance;
   Target() = default;
   Target(
     const Armor & armor, std::chrono::steady_clock::time_point t, double radius, int armor_num,
@@ -37,7 +37,7 @@ public:
   const tools::ExtendedKalmanFilter & ekf() const;
   std::vector<Eigen::Vector4d> armor_xyza_list() const;
 
-  bool diverged() const;
+  bool diverged();
 
   bool convergened();
 
@@ -46,6 +46,7 @@ public:
   bool checkinit();
 
 private:
+  double fixed_r_;  // 固定的旋转半径
   int armor_num_;
   int switch_count_;
   int update_count_;

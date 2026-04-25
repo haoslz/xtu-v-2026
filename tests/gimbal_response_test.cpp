@@ -55,7 +55,6 @@ int main(int argc, char * argv[])
   io::CBoard cboard(config_path);
 
   auto init_angle = 0;
-  const double DEG2RAD = M_PI / 180.0;
   double slice = circle * 100;  //切片数=周期*帧率
   auto dangle = delta_angle / slice;
   double cmd_angle = init_angle;
@@ -93,29 +92,29 @@ int main(int argc, char * argv[])
         cmd_angle = init_angle;
         command = {1, 0, 0, 0};
         if (axis_index == 0)
-          command.yaw = cmd_angle * DEG2RAD;
+          command.yaw = cmd_angle / 57.3;
         else
-          command.pitch = cmd_angle * DEG2RAD;
+          command.pitch = cmd_angle / 57.3;
         count = 0;
 
       } else {
         cmd_angle += dangle;
         if (axis_index == 0)
-          command.yaw = cmd_angle * DEG2RAD;
+          command.yaw = cmd_angle / 57.3;
         else
-          command.pitch = cmd_angle * DEG2RAD;
+          command.pitch = cmd_angle / 57.3;
         count++;
       }
 
       cboard.send(command);
-        if (axis_index == 0) {
-        data["cmd_yaw"] = command.yaw;
-        data["last_cmd_yaw"] = last_command.yaw;
-        data["gimbal_yaw"] = eulers[0];
+      if (axis_index == 0) {
+        data["cmd_yaw"] = command.yaw * 57.3;
+        data["last_cmd_yaw"] = last_command.yaw * 57.3;
+        data["gimbal_yaw"] = eulers[0] * 57.3;
       } else {
-        data["cmd_pitch"] = command.pitch;
-        data["last_cmd_pitch"] = last_command.pitch;
-        data["gimbal_pitch"] = eulers[1];
+        data["cmd_pitch"] = command.pitch * 57.3;
+        data["last_cmd_pitch"] = last_command.pitch * 57.3;
+        data["gimbal_pitch"] = eulers[1] * 57.3;
       }
       data["t"] = tools::delta_time(std::chrono::steady_clock::now(), t0);
       last_command = command;
@@ -128,13 +127,13 @@ int main(int argc, char * argv[])
         cmd_angle += delta_angle;
         count = 0;
       }
-  command = {1, 0, tools::limit_rad(cmd_angle * DEG2RAD), 0};
+      command = {1, 0, tools::limit_rad(cmd_angle / 57.3), 0};
       count++;
 
       cboard.send(command);
-  data["cmd_yaw"] = command.yaw;
-  data["last_cmd_yaw"] = last_command.yaw;
-  data["gimbal_yaw"] = eulers[0];
+      data["cmd_yaw"] = command.yaw * 57.3;
+      data["last_cmd_yaw"] = last_command.yaw * 57.3;
+      data["gimbal_yaw"] = eulers[0] * 57.3;
       last_command = command;
       plotter.plot(data);
       std::this_thread::sleep_for(8ms);  //模拟自瞄100fps
@@ -142,8 +141,8 @@ int main(int argc, char * argv[])
 
     else if (signal_mode == "circle") {
       std::cout << "t: " << t << std::endl;
-  command.yaw = yaw_cal(t) * DEG2RAD;
-  command.pitch = pitch_cal(t) * DEG2RAD;
+      command.yaw = yaw_cal(t) / 57.3;
+      command.pitch = pitch_cal(t) / 57.3;
       command.control = 1;
       command.shoot = 0;
       t += dt;
@@ -154,10 +153,10 @@ int main(int argc, char * argv[])
       cboard.send(command);
 
       data["t"] = t;
-  data["cmd_yaw"] = command.yaw;
-  data["cmd_pitch"] = command.pitch;
-  data["gimbal_yaw"] = eulers[0];
-  data["gimbal_pitch"] = eulers[1];
+      data["cmd_yaw"] = command.yaw * 57.3;
+      data["cmd_pitch"] = command.pitch * 57.3;
+      data["gimbal_yaw"] = eulers[0] * 57.3;
+      data["gimbal_pitch"] = eulers[1] * 57.3;
       plotter.plot(data);
       std::this_thread::sleep_for(9ms);
     }

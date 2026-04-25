@@ -31,7 +31,7 @@ int main(int argc, char * argv[])
 
   // 初始化云台
   io::Gimbal gimbal(config_path);
-  io::VisionToGimbal plan;
+  io::VisionToGimbal plan{};
   auto last_t = std::chrono::steady_clock::now();
   plan.yaw = 0;
   plan.yaw_vel = 0;

@@ -1,20 +1,21 @@
-pattern_cols: 11
-pattern_rows: 8
-center_distance_mm: 5
+pattern_cols: 10
+pattern_rows: 7
+center_distance_mm: 7
 
 R_gimbal2imubody: [1, 0, 0, 0, 1, 0,  0, 0, 1]
 
 camera_name: "hikrobot"
-exposure_ms: 3
+exposure_ms: 10
 gain: 10.0
 vid_pid: "2bdf:0001"
-com_port: "/dev/gimbal"
+
+# 重投影误差: 0.0379px
+camera_matrix: [2419.1320001267918, 0, 698.62756276542461, 0, 2420.1978575157791, 567.76020956658726, 0, 0, 1]
+distort_coeffs: [-0.031842134984865628, 0.18860044169341547, 0.00028550350540501764, -0.0012840113536257852, 0]
 #####-----cboard参数-----#####
+
+com_port: "/dev/gimbal"
 quaternion_canid: 0x01
 bullet_speed_canid: 0x110
 send_canid: 0xff
 can_interface: "can0"
-
-# 重投影误差: 0.0453px
-camera_matrix: [2489.7383897512514, 0, 667.6753988666527, 0, 2490.6960808066838, 571.05053143291263, 0, 0, 1]
-distort_coeffs: [-0.016304932582724346, 0.23092436762963142, 0.0011128599038257459, -0.0048370268354093211, 0]

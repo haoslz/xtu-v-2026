@@ -73,8 +73,9 @@ int main(int argc, char * argv[])
     auto plan = aimer.mpc_aim(target_copy, t, gs, true);
 
     gimbal.send(
-      plan.control, plan.fire, plan.yaw, plan.yaw_vel, plan.yaw_acc, plan.pitch, plan.pitch_vel,
-      plan.pitch_acc);
+      plan.control, plan.fire,
+      plan.yaw, plan.yaw_vel, plan.yaw_acc,
+      plan.pitch, plan.pitch_vel, plan.pitch_acc);
     // -------------- 调试输出 --------------
 
     nlohmann::json data;
@@ -85,9 +86,9 @@ int main(int argc, char * argv[])
       data["buff_R_yaw"] = p.ypd_in_world[0];
       data["buff_R_pitch"] = p.ypd_in_world[1];
       data["buff_R_dis"] = p.ypd_in_world[2];
-  data["buff_yaw"] = p.ypr_in_world[0];
-  data["buff_pitch"] = p.ypr_in_world[1];
-  data["buff_roll"] = p.ypr_in_world[2];
+      data["buff_yaw"] = p.ypr_in_world[0] * 57.3;
+      data["buff_pitch"] = p.ypr_in_world[1] * 57.3;
+      data["buff_roll"] = p.ypr_in_world[2] * 57.3;
     }
 
     if (!target.is_unsolve()) {
@@ -123,10 +124,10 @@ int main(int argc, char * argv[])
       data["R_V_yaw"] = x[1];
       data["R_pitch"] = x[2];
       data["R_dis"] = x[3];
-    data["yaw"] = x[4];
+      data["yaw"] = x[4] * 57.3;
 
-  data["angle"] = x[5];
-  data["spd"] = x[6];
+      data["angle"] = x[5] * 57.3;
+      data["spd"] = x[6] * 57.3;
       if (x.size() >= 10) {
         data["spd"] = x[6];
         data["a"] = x[7];
@@ -137,18 +138,18 @@ int main(int argc, char * argv[])
     }
 
     // 云台响应情况
-  data["gimbal_yaw"] = gs.yaw;
-  data["gimbal_pitch"] = gs.pitch;
-  data["gimbal_yaw_vel"] = gs.yaw_vel;
-  data["gimbal_pitch_vel"] = gs.pitch_vel;
+    data["gimbal_yaw"] = gs.yaw * 57.3;
+    data["gimbal_pitch"] = gs.pitch * 57.3;
+    // data["gimbal_yaw_vel"] = gs.yaw_vel * 57.3;
+    // data["gimbal_pitch_vel"] = gs.pitch_vel * 57.3;
 
     if (plan.control) {
-  data["plan_yaw"] = plan.yaw;
-  data["plan_pitch"] = plan.pitch;
-  data["plan_yaw_vel"] = plan.yaw_vel;
-  data["plan_pitch_vel"] = plan.pitch_vel;
-  data["plan_yaw_acc"] = plan.yaw_acc;
-  data["plan_pitch_acc"] = plan.pitch_acc;
+      data["plan_yaw"] = plan.yaw * 57.3;
+      data["plan_pitch"] = plan.pitch * 57.3;
+      data["plan_yaw_vel"] = plan.yaw_vel * 57.3;
+      data["plan_pitch_vel"] = plan.pitch_vel * 57.3;
+      data["plan_yaw_acc"] = plan.yaw_acc * 57.3;
+      data["plan_pitch_acc"] = plan.pitch_acc * 57.3;
       data["shoot"] = plan.fire ? 1 : 0;
     }
 
